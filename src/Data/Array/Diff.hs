@@ -1,6 +1,7 @@
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# OPTIONS_GHC -funbox-strict-fields #-}
 
@@ -47,7 +48,7 @@ module Data.Array.Diff (
     -- I later return to the old version, I want it to mutate back
     -- instead of being copied".
 
-    IOToDiffArray, -- data IOToDiffArray
+    -- IOToDiffArray, -- data IOToDiffArray
                    --     (a :: * -> * -> *) -- internal mutable array
                    --     (i :: *)           -- indices
                    --     (e :: *)           -- elements
@@ -56,7 +57,7 @@ module Data.Array.Diff (
 
     -- Two most important diff array types are fully polymorphic
     -- lazy boxed DiffArray:
-    DiffArray,     -- = IOToDiffArray IOArray
+    -- DiffArray,     -- = IOToDiffArray IOArray
     -- ...and strict unboxed DiffUArray, working only for elements
     -- of primitive types but more compact and usually faster:
     DiffUArray,    -- = IOToDiffArray IOUArray
@@ -99,20 +100,34 @@ import System.IO.Unsafe   (unsafePerformIO)
 -- | An arbitrary 'MArray' type living in the 'IO' monad can be converted
 -- to a diff array.
 
-newtype IOToDiffArray a i e =
-    DiffArray {varDiffArray :: IORef (DiffArrayData a i e)}
+newtype DiffUArray ix e =
+    DiffUArray {varDiffArray :: IORef (DiffData ix e)}
+
+class DA ix e where
+    data DiffData ix e
+    current :: IOUArray ix e -> DiffData ix e
+    diff    :: DiffUArray ix e -> Int -> e -> DiffData ix e
+    withDA  :: DiffData ix e -> (IOUArray ix e -> b) -> (DiffUArray ix e -> Int -> e -> b) -> b
+
+instance (Ix ix) => DA ix Int where
+    data DiffData ix Int = CurrentInt !(IOUArray ix Int)
+                         | DiffInt !(DiffUArray ix Int) !Int !Int
+    current a     = CurrentInt a
+    diff    a i e = DiffInt a i e
+    withDA (CurrentInt a) f _  = f a
+    withDA (DiffInt a i e) _ f = f a i e
 
 -- Internal representation: either a mutable array, or a link to
 -- another diff array patched with a list of index+element pairs.
-data DiffArrayData a i e = Current !(a i e)
-                         | Diff !(IOToDiffArray a i e) !Int !e
+--data instance DiffArrayData i e = Current !(IOUArray i e)
+--                       | Diff !(DiffUArray i e) !Int !e
 
 -- | Fully polymorphic lazy boxed diff array.
-type DiffArray  = IOToDiffArray IOArray
+--type DiffArray  = IOToDiffArray IOArray
 
 -- | Strict unboxed diff array, working only for elements
 -- of primitive types but more compact and usually faster than 'DiffArray'.
-type DiffUArray = IOToDiffArray IOUArray
+--type DiffUArray = IOToDiffArray IOUArray
 
 -- Having 'MArray a e IO' in instance context would require
 -- -XUndecidableInstances, so each instance is separate here.
@@ -120,55 +135,91 @@ type DiffUArray = IOToDiffArray IOUArray
 ------------------------------------------------------------------------
 -- Show instances
 
-instance (Ix ix, Show ix, Show e) => Show (DiffArray ix e) where
-  showsPrec = showsIArray
+--instance (Ix ix, Show ix, Show e) => Show (DiffArray ix e) where
+--  showsPrec = showsIArray
 
-instance (Ix ix, Show ix) => Show (DiffUArray ix Bool) where
-  showsPrec = showsIArray
-
-instance (Ix ix, Show ix) => Show (DiffUArray ix Char) where
-  showsPrec = showsIArray
+--instance (Ix ix, Show ix) => Show (DiffUArray ix Bool) where
+--  showsPrec = showsIArray
+--
+--instance (Ix ix, Show ix) => Show (DiffUArray ix Char) where
+--  showsPrec = showsIArray
 
 instance (Ix ix, Show ix) => Show (DiffUArray ix Int) where
   showsPrec = showsIArray
 
-instance (Ix ix, Show ix) => Show (DiffUArray ix Word) where
-  showsPrec = showsIArray
-
-instance (Ix ix, Show ix) => Show (DiffUArray ix Float) where
-  showsPrec = showsIArray
-
-instance (Ix ix, Show ix) => Show (DiffUArray ix Double) where
-  showsPrec = showsIArray
-
-instance (Ix ix, Show ix) => Show (DiffUArray ix Int8) where
-  showsPrec = showsIArray
-
-instance (Ix ix, Show ix) => Show (DiffUArray ix Int16) where
-  showsPrec = showsIArray
-
-instance (Ix ix, Show ix) => Show (DiffUArray ix Int32) where
-  showsPrec = showsIArray
-
-instance (Ix ix, Show ix) => Show (DiffUArray ix Int64) where
-  showsPrec = showsIArray
-
-instance (Ix ix, Show ix) => Show (DiffUArray ix Word8) where
-  showsPrec = showsIArray
-
-instance (Ix ix, Show ix) => Show (DiffUArray ix Word16) where
-  showsPrec = showsIArray
-
-instance (Ix ix, Show ix) => Show (DiffUArray ix Word32) where
-  showsPrec = showsIArray
-
-instance (Ix ix, Show ix) => Show (DiffUArray ix Word64) where
-  showsPrec = showsIArray
+--instance (Ix ix, Show ix) => Show (DiffUArray ix Word) where
+--  showsPrec = showsIArray
+--
+--instance (Ix ix, Show ix) => Show (DiffUArray ix Float) where
+--  showsPrec = showsIArray
+--
+--instance (Ix ix, Show ix) => Show (DiffUArray ix Double) where
+--  showsPrec = showsIArray
+--
+--instance (Ix ix, Show ix) => Show (DiffUArray ix Int8) where
+--  showsPrec = showsIArray
+--
+--instance (Ix ix, Show ix) => Show (DiffUArray ix Int16) where
+--  showsPrec = showsIArray
+--
+--instance (Ix ix, Show ix) => Show (DiffUArray ix Int32) where
+--  showsPrec = showsIArray
+--
+--instance (Ix ix, Show ix) => Show (DiffUArray ix Int64) where
+--  showsPrec = showsIArray
+--
+--instance (Ix ix, Show ix) => Show (DiffUArray ix Word8) where
+--  showsPrec = showsIArray
+--
+--instance (Ix ix, Show ix) => Show (DiffUArray ix Word16) where
+--  showsPrec = showsIArray
+--
+--instance (Ix ix, Show ix) => Show (DiffUArray ix Word32) where
+--  showsPrec = showsIArray
+--
+--instance (Ix ix, Show ix) => Show (DiffUArray ix Word64) where
+--  showsPrec = showsIArray
 
 ------------------------------------------------------------------------
 -- IArray instances
 
-instance IArray (IOToDiffArray IOArray) e where
+--instance IArray (IOToDiffArray IOArray) e where
+--    bounds        a      = unsafePerformIO $ boundsDiffArray a
+--    {-# NOINLINE bounds #-}
+--    numElements   a      = unsafePerformIO $ numElementsDiffArray a
+--    {-# NOINLINE numElements #-}
+--    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
+--    {-# NOINLINE unsafeArray #-}
+--    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
+--    {-# NOINLINE unsafeAt #-}
+--    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
+--    {-# NOINLINE unsafeReplace #-}
+
+--instance IArray (DiffUArray) Bool where
+--    bounds        a      = unsafePerformIO $ boundsDiffArray a
+--    {-# NOINLINE bounds #-}
+--    numElements   a      = unsafePerformIO $ numElementsDiffArray a
+--    {-# NOINLINE numElements #-}
+--    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
+--    {-# NOINLINE unsafeArray #-}
+--    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
+--    {-# NOINLINE unsafeAt #-}
+--    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
+--    {-# NOINLINE unsafeReplace #-}
+--
+--instance IArray (DiffUArray) Char where
+--    bounds        a      = unsafePerformIO $ boundsDiffArray a
+--    {-# NOINLINE bounds #-}
+--    numElements   a      = unsafePerformIO $ numElementsDiffArray a
+--    {-# NOINLINE numElements #-}
+--    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
+--    {-# NOINLINE unsafeArray #-}
+--    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
+--    {-# NOINLINE unsafeAt #-}
+--    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
+--    {-# NOINLINE unsafeReplace #-}
+
+instance IArray DiffUArray Int where
     bounds        a      = unsafePerformIO $ boundsDiffArray a
     {-# NOINLINE bounds #-}
     numElements   a      = unsafePerformIO $ numElementsDiffArray a
@@ -180,351 +231,312 @@ instance IArray (IOToDiffArray IOArray) e where
     unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
     {-# NOINLINE unsafeReplace #-}
 
-instance IArray (IOToDiffArray IOUArray) Bool where
-    bounds        a      = unsafePerformIO $ boundsDiffArray a
-    {-# NOINLINE bounds #-}
-    numElements   a      = unsafePerformIO $ numElementsDiffArray a
-    {-# NOINLINE numElements #-}
-    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
-    {-# NOINLINE unsafeArray #-}
-    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
-    {-# NOINLINE unsafeAt #-}
-    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
-    {-# NOINLINE unsafeReplace #-}
-
-instance IArray (IOToDiffArray IOUArray) Char where
-    bounds        a      = unsafePerformIO $ boundsDiffArray a
-    {-# NOINLINE bounds #-}
-    numElements   a      = unsafePerformIO $ numElementsDiffArray a
-    {-# NOINLINE numElements #-}
-    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
-    {-# NOINLINE unsafeArray #-}
-    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
-    {-# NOINLINE unsafeAt #-}
-    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
-    {-# NOINLINE unsafeReplace #-}
-
-instance IArray (IOToDiffArray IOUArray) Int where
-    bounds        a      = unsafePerformIO $ boundsDiffArray a
-    {-# NOINLINE bounds #-}
-    numElements   a      = unsafePerformIO $ numElementsDiffArray a
-    {-# NOINLINE numElements #-}
-    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
-    {-# NOINLINE unsafeArray #-}
-    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
-    {-# NOINLINE unsafeAt #-}
-    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
-    {-# NOINLINE unsafeReplace #-}
-
-instance IArray (IOToDiffArray IOUArray) Word where
-    bounds        a      = unsafePerformIO $ boundsDiffArray a
-    {-# NOINLINE bounds #-}
-    numElements   a      = unsafePerformIO $ numElementsDiffArray a
-    {-# NOINLINE numElements #-}
-    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
-    {-# NOINLINE unsafeArray #-}
-    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
-    {-# NOINLINE unsafeAt #-}
-    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
-    {-# NOINLINE unsafeReplace #-}
-
-instance IArray (IOToDiffArray IOUArray) (Ptr a) where
-    bounds        a      = unsafePerformIO $ boundsDiffArray a
-    {-# NOINLINE bounds #-}
-    numElements   a      = unsafePerformIO $ numElementsDiffArray a
-    {-# NOINLINE numElements #-}
-    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
-    {-# NOINLINE unsafeArray #-}
-    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
-    {-# NOINLINE unsafeAt #-}
-    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
-    {-# NOINLINE unsafeReplace #-}
-
-instance IArray (IOToDiffArray IOUArray) (FunPtr a) where
-    bounds        a      = unsafePerformIO $ boundsDiffArray a
-    {-# NOINLINE bounds #-}
-    numElements   a      = unsafePerformIO $ numElementsDiffArray a
-    {-# NOINLINE numElements #-}
-    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
-    {-# NOINLINE unsafeArray #-}
-    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
-    {-# NOINLINE unsafeAt #-}
-    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
-    {-# NOINLINE unsafeReplace #-}
-
-instance IArray (IOToDiffArray IOUArray) Float where
-    bounds        a      = unsafePerformIO $ boundsDiffArray a
-    {-# NOINLINE bounds #-}
-    numElements   a      = unsafePerformIO $ numElementsDiffArray a
-    {-# NOINLINE numElements #-}
-    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
-    {-# NOINLINE unsafeArray #-}
-    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
-    {-# NOINLINE unsafeAt #-}
-    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
-    {-# NOINLINE unsafeReplace #-}
-
-instance IArray (IOToDiffArray IOUArray) Double where
-    bounds        a      = unsafePerformIO $ boundsDiffArray a
-    {-# NOINLINE bounds #-}
-    numElements   a      = unsafePerformIO $ numElementsDiffArray a
-    {-# NOINLINE numElements #-}
-    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
-    {-# NOINLINE unsafeArray #-}
-    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
-    {-# NOINLINE unsafeAt #-}
-    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
-    {-# NOINLINE unsafeReplace #-}
-
-instance IArray (IOToDiffArray IOUArray) (StablePtr a) where
-    bounds        a      = unsafePerformIO $ boundsDiffArray a
-    {-# NOINLINE bounds #-}
-    numElements   a      = unsafePerformIO $ numElementsDiffArray a
-    {-# NOINLINE numElements #-}
-    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
-    {-# NOINLINE unsafeArray #-}
-    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
-    {-# NOINLINE unsafeAt #-}
-    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
-    {-# NOINLINE unsafeReplace #-}
-
-instance IArray (IOToDiffArray IOUArray) Int8 where
-    bounds        a      = unsafePerformIO $ boundsDiffArray a
-    {-# NOINLINE bounds #-}
-    numElements   a      = unsafePerformIO $ numElementsDiffArray a
-    {-# NOINLINE numElements #-}
-    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
-    {-# NOINLINE unsafeArray #-}
-    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
-    {-# NOINLINE unsafeAt #-}
-    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
-    {-# NOINLINE unsafeReplace #-}
-
-instance IArray (IOToDiffArray IOUArray) Int16 where
-    bounds        a      = unsafePerformIO $ boundsDiffArray a
-    {-# NOINLINE bounds #-}
-    numElements   a      = unsafePerformIO $ numElementsDiffArray a
-    {-# NOINLINE numElements #-}
-    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
-    {-# NOINLINE unsafeArray #-}
-    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
-    {-# NOINLINE unsafeAt #-}
-    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
-    {-# NOINLINE unsafeReplace #-}
-
-instance IArray (IOToDiffArray IOUArray) Int32 where
-    bounds        a      = unsafePerformIO $ boundsDiffArray a
-    {-# NOINLINE bounds #-}
-    numElements   a      = unsafePerformIO $ numElementsDiffArray a
-    {-# NOINLINE numElements #-}
-    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
-    {-# NOINLINE unsafeArray #-}
-    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
-    {-# NOINLINE unsafeAt #-}
-    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
-    {-# NOINLINE unsafeReplace #-}
-
-instance IArray (IOToDiffArray IOUArray) Int64 where
-    bounds        a      = unsafePerformIO $ boundsDiffArray a
-    {-# NOINLINE bounds #-}
-    numElements   a      = unsafePerformIO $ numElementsDiffArray a
-    {-# NOINLINE numElements #-}
-    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
-    {-# NOINLINE unsafeArray #-}
-    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
-    {-# NOINLINE unsafeAt #-}
-    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
-    {-# NOINLINE unsafeReplace #-}
-
-instance IArray (IOToDiffArray IOUArray) Word8 where
-    bounds        a      = unsafePerformIO $ boundsDiffArray a
-    {-# NOINLINE bounds #-}
-    numElements   a      = unsafePerformIO $ numElementsDiffArray a
-    {-# NOINLINE numElements #-}
-    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
-    {-# NOINLINE unsafeArray #-}
-    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
-    {-# NOINLINE unsafeAt #-}
-    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
-    {-# NOINLINE unsafeReplace #-}
-
-instance IArray (IOToDiffArray IOUArray) Word16 where
-    bounds        a      = unsafePerformIO $ boundsDiffArray a
-    {-# NOINLINE bounds #-}
-    numElements   a      = unsafePerformIO $ numElementsDiffArray a
-    {-# NOINLINE numElements #-}
-    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
-    {-# NOINLINE unsafeArray #-}
-    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
-    {-# NOINLINE unsafeAt #-}
-    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
-    {-# NOINLINE unsafeReplace #-}
-
-instance IArray (IOToDiffArray IOUArray) Word32 where
-    bounds        a      = unsafePerformIO $ boundsDiffArray a
-    {-# NOINLINE bounds #-}
-    numElements   a      = unsafePerformIO $ numElementsDiffArray a
-    {-# NOINLINE numElements #-}
-    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
-    {-# NOINLINE unsafeArray #-}
-    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
-    {-# NOINLINE unsafeAt #-}
-    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
-    {-# NOINLINE unsafeReplace #-}
-
-instance IArray (IOToDiffArray IOUArray) Word64 where
-    bounds        a      = unsafePerformIO $ boundsDiffArray a
-    {-# NOINLINE bounds #-}
-    numElements   a      = unsafePerformIO $ numElementsDiffArray a
-    {-# NOINLINE numElements #-}
-    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
-    {-# NOINLINE unsafeArray #-}
-    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
-    {-# NOINLINE unsafeAt #-}
-    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
-    {-# NOINLINE unsafeReplace #-}
+--instance IArray (DiffUArray) Word where
+--    bounds        a      = unsafePerformIO $ boundsDiffArray a
+--    {-# NOINLINE bounds #-}
+--    numElements   a      = unsafePerformIO $ numElementsDiffArray a
+--    {-# NOINLINE numElements #-}
+--    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
+--    {-# NOINLINE unsafeArray #-}
+--    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
+--    {-# NOINLINE unsafeAt #-}
+--    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
+--    {-# NOINLINE unsafeReplace #-}
+--
+--instance IArray (DiffUArray) (Ptr a) where
+--    bounds        a      = unsafePerformIO $ boundsDiffArray a
+--    {-# NOINLINE bounds #-}
+--    numElements   a      = unsafePerformIO $ numElementsDiffArray a
+--    {-# NOINLINE numElements #-}
+--    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
+--    {-# NOINLINE unsafeArray #-}
+--    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
+--    {-# NOINLINE unsafeAt #-}
+--    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
+--    {-# NOINLINE unsafeReplace #-}
+--
+--instance IArray (DiffUArray) (FunPtr a) where
+--    bounds        a      = unsafePerformIO $ boundsDiffArray a
+--    {-# NOINLINE bounds #-}
+--    numElements   a      = unsafePerformIO $ numElementsDiffArray a
+--    {-# NOINLINE numElements #-}
+--    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
+--    {-# NOINLINE unsafeArray #-}
+--    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
+--    {-# NOINLINE unsafeAt #-}
+--    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
+--    {-# NOINLINE unsafeReplace #-}
+--
+--instance IArray (DiffUArray) Float where
+--    bounds        a      = unsafePerformIO $ boundsDiffArray a
+--    {-# NOINLINE bounds #-}
+--    numElements   a      = unsafePerformIO $ numElementsDiffArray a
+--    {-# NOINLINE numElements #-}
+--    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
+--    {-# NOINLINE unsafeArray #-}
+--    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
+--    {-# NOINLINE unsafeAt #-}
+--    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
+--    {-# NOINLINE unsafeReplace #-}
+--
+--instance IArray (DiffUArray) Double where
+--    bounds        a      = unsafePerformIO $ boundsDiffArray a
+--    {-# NOINLINE bounds #-}
+--    numElements   a      = unsafePerformIO $ numElementsDiffArray a
+--    {-# NOINLINE numElements #-}
+--    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
+--    {-# NOINLINE unsafeArray #-}
+--    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
+--    {-# NOINLINE unsafeAt #-}
+--    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
+--    {-# NOINLINE unsafeReplace #-}
+--
+--instance IArray (DiffUArray) (StablePtr a) where
+--    bounds        a      = unsafePerformIO $ boundsDiffArray a
+--    {-# NOINLINE bounds #-}
+--    numElements   a      = unsafePerformIO $ numElementsDiffArray a
+--    {-# NOINLINE numElements #-}
+--    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
+--    {-# NOINLINE unsafeArray #-}
+--    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
+--    {-# NOINLINE unsafeAt #-}
+--    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
+--    {-# NOINLINE unsafeReplace #-}
+--
+--instance IArray (DiffUArray) Int8 where
+--    bounds        a      = unsafePerformIO $ boundsDiffArray a
+--    {-# NOINLINE bounds #-}
+--    numElements   a      = unsafePerformIO $ numElementsDiffArray a
+--    {-# NOINLINE numElements #-}
+--    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
+--    {-# NOINLINE unsafeArray #-}
+--    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
+--    {-# NOINLINE unsafeAt #-}
+--    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
+--    {-# NOINLINE unsafeReplace #-}
+--
+--instance IArray (DiffUArray) Int16 where
+--    bounds        a      = unsafePerformIO $ boundsDiffArray a
+--    {-# NOINLINE bounds #-}
+--    numElements   a      = unsafePerformIO $ numElementsDiffArray a
+--    {-# NOINLINE numElements #-}
+--    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
+--    {-# NOINLINE unsafeArray #-}
+--    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
+--    {-# NOINLINE unsafeAt #-}
+--    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
+--    {-# NOINLINE unsafeReplace #-}
+--
+--instance IArray (DiffUArray) Int32 where
+--    bounds        a      = unsafePerformIO $ boundsDiffArray a
+--    {-# NOINLINE bounds #-}
+--    numElements   a      = unsafePerformIO $ numElementsDiffArray a
+--    {-# NOINLINE numElements #-}
+--    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
+--    {-# NOINLINE unsafeArray #-}
+--    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
+--    {-# NOINLINE unsafeAt #-}
+--    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
+--    {-# NOINLINE unsafeReplace #-}
+--
+--instance IArray (DiffUArray) Int64 where
+--    bounds        a      = unsafePerformIO $ boundsDiffArray a
+--    {-# NOINLINE bounds #-}
+--    numElements   a      = unsafePerformIO $ numElementsDiffArray a
+--    {-# NOINLINE numElements #-}
+--    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
+--    {-# NOINLINE unsafeArray #-}
+--    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
+--    {-# NOINLINE unsafeAt #-}
+--    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
+--    {-# NOINLINE unsafeReplace #-}
+--
+--instance IArray (DiffUArray) Word8 where
+--    bounds        a      = unsafePerformIO $ boundsDiffArray a
+--    {-# NOINLINE bounds #-}
+--    numElements   a      = unsafePerformIO $ numElementsDiffArray a
+--    {-# NOINLINE numElements #-}
+--    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
+--    {-# NOINLINE unsafeArray #-}
+--    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
+--    {-# NOINLINE unsafeAt #-}
+--    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
+--    {-# NOINLINE unsafeReplace #-}
+--
+--instance IArray (DiffUArray) Word16 where
+--    bounds        a      = unsafePerformIO $ boundsDiffArray a
+--    {-# NOINLINE bounds #-}
+--    numElements   a      = unsafePerformIO $ numElementsDiffArray a
+--    {-# NOINLINE numElements #-}
+--    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
+--    {-# NOINLINE unsafeArray #-}
+--    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
+--    {-# NOINLINE unsafeAt #-}
+--    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
+--    {-# NOINLINE unsafeReplace #-}
+--
+--instance IArray (DiffUArray) Word32 where
+--    bounds        a      = unsafePerformIO $ boundsDiffArray a
+--    {-# NOINLINE bounds #-}
+--    numElements   a      = unsafePerformIO $ numElementsDiffArray a
+--    {-# NOINLINE numElements #-}
+--    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
+--    {-# NOINLINE unsafeArray #-}
+--    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
+--    {-# NOINLINE unsafeAt #-}
+--    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
+--    {-# NOINLINE unsafeReplace #-}
+--
+--instance IArray (DiffUArray) Word64 where
+--    bounds        a      = unsafePerformIO $ boundsDiffArray a
+--    {-# NOINLINE bounds #-}
+--    numElements   a      = unsafePerformIO $ numElementsDiffArray a
+--    {-# NOINLINE numElements #-}
+--    unsafeArray   lu ies = unsafePerformIO $ newDiffArray lu ies
+--    {-# NOINLINE unsafeArray #-}
+--    unsafeAt      a i    = unsafePerformIO $ a `readDiffArray` i
+--    {-# NOINLINE unsafeAt #-}
+--    unsafeReplace a ies  = unsafePerformIO $ a `replaceDiffArray` ies
+--    {-# NOINLINE unsafeReplace #-}
 
 ------------------------------------------------------------------------
 -- The important stuff.
 
-newDiffArray :: (MArray a e IO, Ix i)
+newDiffArray :: (MArray IOUArray e IO, Ix i, DA i e)
              => (i,i)
              -> [(Int, e)]
-             -> IO (IOToDiffArray a i e)
+             -> IO (DiffUArray i e)
 newDiffArray (l,u) ies = do
     a <- newArray_ (l,u)
     sequence_ [unsafeWrite a i e | (i, e) <- ies]
-    var <- newIORef $! Current a
-    return $! DiffArray var
+    var <- newIORef $! current a
+    return $! DiffUArray var
 
-readDiffArray :: (MArray a e IO, Ix i)
-              => IOToDiffArray a i e
+readDiffArray :: (MArray IOUArray e IO, Ix i, DA i e)
+              => DiffUArray i e
               -> Int
               -> IO e
 a `readDiffArray` i = do
     d <- readIORef (varDiffArray a)
-    case d of
-        Current a'               -> unsafeRead a' i
-        Diff a' i' e | i == i'   -> return e
-                     | otherwise -> readDiffArray a' i
+    withDA d (\a' -> unsafeRead a' i)
+             (\a' i' e -> if i == i' then return e
+                                   else readDiffArray a' i)
 
-replaceDiffArray :: (MArray a e IO, Ix i)
-                => IOToDiffArray a i e
+replaceDiffArray :: (MArray IOUArray e IO, Ix i, DA i e)
+                => DiffUArray i e
                 -> [(Int, e)]
-                -> IO (IOToDiffArray a i e)
+                -> IO (DiffUArray i e)
 replaceDiffArray = foldM replaceDiffArray1
 
-replaceDiffArray1 :: (MArray a e IO, Ix i)
-                 => IOToDiffArray a i e
+replaceDiffArray1 :: (MArray IOUArray e IO, Ix i, DA i e)
+                 => DiffUArray i e
                  -> (Int, e)
-                 -> IO (IOToDiffArray a i e)
+                 -> IO (DiffUArray i e)
 replaceDiffArray1 a (i, e) = do
     d <- readIORef (varDiffArray a)
-    case d of
-        Current a' -> do
-            -- Replace value in array
-            e' <- unsafeRead a' i
-            unsafeWrite a' i e
-            -- Update old IORef to point to new Current
-            var' <- newIORef $! Current a'
-            writeIORef (varDiffArray a) $! Diff (DiffArray var') i e'
-            return $! DiffArray var'
-        Diff _ _ _ -> do
-            -- We still do the copy when there is nothing to change
-            -- but this is not the current version. So you can use
-            -- 'a // []' to make sure that the resulting array has
-            -- fast element access.
-            a' <- thawDiffArray a
-            -- thawDiffArray gives a fresh array which we can safely
-            -- mutate.
-            unsafeWrite a' i e
-            var' <- newIORef $! Current a'
-            return $! DiffArray var'
+    withDA d update copy
+  where
+    update a' = do
+        -- Replace value in array
+        e' <- unsafeRead a' i
+        unsafeWrite a' i e
+        -- Update old IORef to point to new Current
+        var' <- newIORef $! current a'
+        writeIORef (varDiffArray a) $! diff (DiffUArray var') i e'
+        return $! DiffUArray var'
+    copy _ _ _ = do
+        -- We still do the copy when there is nothing to change
+        -- but this is not the current version. So you can use
+        -- 'a // []' to make sure that the resulting array has
+        -- fast element access.
+        a' <- thawDiffArray a
+        -- thawDiffArray gives a fresh array which we can safely
+        -- mutate.
+        unsafeWrite a' i e
+        var' <- newIORef $! current a'
+        return $! DiffUArray var'
 
 
-boundsDiffArray :: (MArray a e IO, Ix ix)
-                => IOToDiffArray a ix e
-                -> IO (ix,ix)
+boundsDiffArray :: (MArray IOUArray e IO, Ix i, DA i e)
+                => DiffUArray i e
+                -> IO (i,i)
 boundsDiffArray a = do
     d <- readIORef (varDiffArray a)
-    case d of
-        Current a'  -> getBounds a'
-        Diff a' _ _ -> boundsDiffArray a'
+    withDA d getBounds (\a' _ _ -> boundsDiffArray a')
 
-numElementsDiffArray :: (MArray a e IO, Ix ix)
-                     => IOToDiffArray a ix e
+numElementsDiffArray :: (MArray IOUArray e IO, Ix i, DA i e)
+                     => DiffUArray i e
                      -> IO Int
 numElementsDiffArray a = do
     d <- readIORef (varDiffArray a)
-    case d of
-        Current a'  -> getNumElements a'
-        Diff a' _ _ -> numElementsDiffArray a'
+    withDA d getNumElements (\a' _ _ -> numElementsDiffArray a')
 
-freezeDiffArray :: (MArray a e IO, Ix ix)
-                => a ix e
-                -> IO (IOToDiffArray a ix e)
+freezeDiffArray :: (MArray IOUArray e IO, Ix i, DA i e)
+                => IOUArray i e
+                -> IO (DiffUArray i e)
 freezeDiffArray a = do
   (l,u) <- getBounds a
   a' <- newArray_ (l,u)
   sequence_ [unsafeRead a i >>= unsafeWrite a' i | i <- [0 .. rangeSize (l,u) - 1]]
-  var <- newIORef $! Current a'
-  return $! DiffArray var
+  var <- newIORef $! current a'
+  return $! DiffUArray var
 
-{-# RULES
-"freeze/DiffArray" freeze = freezeDiffArray
-    #-}
+-- {-# RULES
+-- "freeze/DiffUArray" freeze = freezeDiffArray
+--     #-}
 
 -- unsafeFreezeDiffArray is really unsafe. Better don't use the old
 -- array at all after freezing. The contents of the source array will
 -- be changed when '//' is applied to the resulting array.
 
-unsafeFreezeDiffArray :: (MArray a e IO, Ix ix)
-                      => a ix e
-                      -> IO (IOToDiffArray a ix e)
+unsafeFreezeDiffArray :: (MArray IOUArray e IO, Ix i, DA i e)
+                      => IOUArray i e
+                      -> IO (DiffUArray i e)
 unsafeFreezeDiffArray a = do
-    var <- newIORef $! Current a
-    return $! DiffArray var
+    var <- newIORef $! current a
+    return $! DiffUArray var
 
-{-# RULES
-"unsafeFreeze/DiffArray" unsafeFreeze = unsafeFreezeDiffArray
-    #-}
+-- {-# RULES
+-- "unsafeFreeze/DiffUArray" unsafeFreeze = unsafeFreezeDiffArray
+--     #-}
 
-thawDiffArray :: (MArray a e IO, Ix ix)
-              => IOToDiffArray a ix e
-              -> IO (a ix e)
+thawDiffArray :: (MArray IOUArray e IO, Ix i, DA i e)
+              => DiffUArray i e
+              -> IO (IOUArray i e)
 thawDiffArray a = do
     d <- readIORef (varDiffArray a)
-    case d of
-        Current a' -> do
-            (l,u) <- getBounds a'
-            a'' <- newArray_ (l,u)
-            sequence_ [unsafeRead a' i >>= unsafeWrite a'' i | i <- [0 .. rangeSize (l,u) - 1]]
-            return a''
-        Diff a' i e -> do
-            a'' <- thawDiffArray a'
-            unsafeWrite a'' i e
-            return a''
+    withDA d copy go
+  where
+    copy a' = do
+        (l,u) <- getBounds a'
+        a'' <- newArray_ (l,u)
+        sequence_ [unsafeRead a' i >>= unsafeWrite a'' i | i <- [0 .. rangeSize (l,u) - 1]]
+        return a''
+    go a' i e = do
+        a'' <- thawDiffArray a'
+        unsafeWrite a'' i e
+        return a''
 
-{-# RULES
-"thaw/DiffArray" thaw = thawDiffArray
-    #-}
+-- {-# RULES
+-- "thaw/DiffUArray" thaw = thawDiffArray
+--     #-}
 
 -- unsafeThawDiffArray is really unsafe. Better don't use the old
 -- array at all after thawing. The contents of the resulting array
 -- will be changed when '//' is applied to the source array.
 
-unsafeThawDiffArray :: (MArray a e IO, Ix ix)
-                    => IOToDiffArray a ix e
-                    -> IO (a ix e)
+unsafeThawDiffArray :: (MArray IOUArray e IO, Ix i, DA i e)
+                    => DiffUArray i e
+                    -> IO (IOUArray i e)
 unsafeThawDiffArray a = do
     d <- readIORef (varDiffArray a)
-    case d of
-        Current a'  -> return a'
-        Diff a' i e -> do
-            a'' <- unsafeThawDiffArray a'
-            unsafeWrite a'' i e
-            return a''
+    withDA d return go
+  where
+    go a' i e = do
+        a'' <- unsafeThawDiffArray a'
+        unsafeWrite a'' i e
+        return a''
 
-{-# RULES
-"unsafeThaw/DiffArray" unsafeThaw = unsafeThawDiffArray
-    #-}
+-- {-# RULES
+-- "unsafeThaw/DiffUArray" unsafeThaw = unsafeThawDiffArray
+--    #-}
