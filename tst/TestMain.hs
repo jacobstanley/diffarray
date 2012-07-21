@@ -1,15 +1,23 @@
+{-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FunctionalDependencies #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -fno-warn-missing-signatures #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 
 module Main where
 
 import           System.Exit
-import           Test.QuickCheck
 import           Test.QuickCheck.All
+import           Test.QuickCheck.Arbitrary
+import           Test.QuickCheck.Gen
+
+import           Control.DeepSeq
+import           Control.Exception (SomeException, try, evaluate)
+import           System.IO.Unsafe (unsafePerformIO)
 
 import           Data.Array.IArray
 import qualified Data.Array as A
@@ -21,90 +29,73 @@ main = do
     if runTests then exitSuccess else exitFailure
 
 ------------------------------------------------------------------------
--- ** Instances
+-- ** IArray
 
---pFunctor :: [Int] -> Bool
---pFunctor = fmap (+ 1) `eq` fmap (+ 1)
+-- prop_functor = fmap (+ 1) `eq_` fmap (+ 1)
 
--- Returns the element of an immutable array at the specified index.
--- (!) :: (IArray a e, Ix i) => a i e -> i -> eSource
+prop_bounds = bounds `eq` bounds
 
-prop_elemAt :: [Int] -> Property
-prop_elemAt xs =
-    not (null xs) ==> forAll (indexOf xs) $ \i -> ((! i) `eq` (! i)) xs
+prop_elemAt i = (! i) `eq` (! i)
 
--- indices :: (IArray a e, Ix i) => a i e -> [i]Source
--- Returns a list of all the valid indices in an array.
-
-prop_indices :: [Int] -> Bool
 prop_indices = indices `eq` indices
 
--- elems :: (IArray a e, Ix i) => a i e -> [e]Source
--- Returns a list of all the elements of an array, in the same order as their indices.
-
-prop_elems :: [Int] -> Bool
 prop_elems = elems `eq` elems
 
--- assocs :: (IArray a e, Ix i) => a i e -> [(i, e)]Source
--- Returns the contents of an array as a list of associations.
-
-prop_assocs :: [Int] -> Bool
 prop_assocs = assocs `eq` assocs
 
--- (//) :: (IArray a e, Ix i) => a i e -> [(i, e)] -> a i e
+prop_update ies = (// ies) `eq_` (// ies)
 
---prop_replace :: [Int] -> Property
---prop_replace xs =
---    not (null xs) ==> forAll (indicesOf xs) $ \(is :: [(Int,Int)]) ->
---    (toList . (// is)) `eq` (toList . (// is))
-
-indexOf :: [a] -> Gen Int
-indexOf xs = elements [0..n-1]
+prop_accum ies = accum' `eq_` accum'
   where
-    n = length xs
+    accum' xs = accum (+) xs ies
 
---indicesOf :: Arbitrary a => [a] -> Gen [(Int, a)]
---indicesOf xs = do
---    is <- listOf1 (indexOf xs)
---    vs <- vector (length is)
---    return (zip is vs)
+prop_amap = amap (+1) `eq_` amap (+1)
+
+prop_ixmap ii xs = (ixmap ii go `eq_` ixmap ii go) xs
+  where
+    go (Ix i) = Ix (i+1)
 
 ------------------------------------------------------------------------
 -- * Model
 
-type Index = Int
+newtype Index = Ix Int
+  deriving (Eq, Ord, Show, Ix, NFData)
 
-type DiffArray a = D.DiffArray Index a
+instance Arbitrary Index where
+    arbitrary = sized $ \n -> Ix `fmap` choose (0, n)
+    shrink (Ix i) = map Ix (shrinkIntegral i)
 
-type Model a = A.Array Index a
+type Value = Int
+
+type DiffArray = D.DiffArray Index Value
+
+type Model = A.Array Index Value
 
 -- | Check that a function operating on a 'DiffArray is equivalent to
 -- one operating on a 'Model'.
-eq :: (Eq a, Eq b, ToList c a)
-   => (Model a -> b)      -- ^ Function that modifies a 'Model' in the same
-                          -- way
-   -> (DiffArray a -> b)  -- ^ Function that modified a 'DiffArray
-   -> c                   -- ^ Initial content of the 'DiffArray and 'Model'
-   -> Bool                -- ^ True if the functions are equivalent
-eq f g xs = g (fromList xs') == f (fromList xs')
-  where
-    xs' = toList xs
+eq :: (NFData a, Eq a) => (Model -> a) -> (DiffArray -> a) -> [Value] -> Bool
+eq f g xs = f (fromList xs) === g (fromList xs)
+
+eq_ :: (Model -> Model) -> (DiffArray -> DiffArray) -> [Value] -> Bool
+eq_ f g = (assocs . f) `eq` (assocs . g)
 
 ------------------------------------------------------------------------
 -- Utils
 
-fromList :: (IArray a e) => [e] -> a Int e
-fromList [] = array (1,0) []
-fromList xs = listArray (0, length xs - 1) xs
+fromList :: (IArray a Value) => [Value] -> a Index Value
+fromList [] = array (Ix 1, Ix 0) []
+fromList xs = listArray (Ix 0, Ix n) xs
+  where
+    n = length xs - 1
 
-class ToList a e | a -> e where
-    toList :: a -> [e]
+-- | Equality as defined by Eq, but also allows _|_ == _|_
+(===) :: (NFData a, Eq a) => a -> a -> Bool
+(===) x y | isBottom x && isBottom y = True
+          | otherwise                = x == y
 
-instance ToList [a] a where
-    toList xs = xs
-
-instance ToList (NonEmptyList a) a where
-    toList (NonEmpty xs) = xs
-
-instance (IArray a e, Ix i) => ToList (a i e) e where
-    toList = elems
+isBottom :: NFData a => a -> Bool
+isBottom x = unsafePerformIO $ do
+    x' <- (try . evaluate . force) x
+    case x' of
+      Left (_::SomeException) -> return True
+      Right _                 -> return False
