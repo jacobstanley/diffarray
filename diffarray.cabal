@@ -21,7 +21,7 @@ library
     , array == 0.4.*
 
   ghc-options:
-    -O2 -Wall -funbox-strict-fields
+    -O2 -Wall
 
 test-suite test-diffarray
   type: exitcode-stdio-1.0
