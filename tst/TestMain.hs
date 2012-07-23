@@ -67,7 +67,7 @@ instance Arbitrary Index where
 
 type Value = Int
 
-type DiffArray = D.DiffArray Index Value
+type DiffArray = D.DiffUArray Index Value
 
 type Model = A.Array Index Value
 
